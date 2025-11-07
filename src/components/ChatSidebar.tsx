@@ -1,8 +1,16 @@
-import { Plus, Search, MessageSquare, Menu, X } from "lucide-react";
+import { Plus, Search, MessageSquare, Menu, X, Library, User, Settings, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import { Link } from "react-router-dom";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface Chat {
   id: string;
@@ -66,6 +74,24 @@ export function ChatSidebar({
           )}
         </div>
 
+        {/* Dashboard Link */}
+        {isOpen ? (
+          <Link
+            to="/dashboard"
+            className="flex items-center gap-3 mx-3 mt-3 px-3 py-2 rounded-lg text-muted-foreground hover:bg-[hsl(var(--hover-bg))] hover:text-foreground transition-all duration-200"
+          >
+            <Library className="h-5 w-5" />
+            <span className="text-sm font-medium">Dashboard</span>
+          </Link>
+        ) : (
+          <Link
+            to="/dashboard"
+            className="flex justify-center mt-3 p-2 mx-2 rounded-lg text-muted-foreground hover:bg-[hsl(var(--hover-bg))] hover:text-foreground transition-colors"
+          >
+            <Library className="h-5 w-5" />
+          </Link>
+        )}
+
         {/* Search (when expanded) */}
         {isOpen && (
           <div className="p-3 border-b border-border">
@@ -126,6 +152,47 @@ export function ChatSidebar({
             )}
           </div>
         </ScrollArea>
+
+        {/* User Profile Section */}
+        <div className="border-t border-border p-3">
+          {isOpen ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-[hsl(var(--hover-bg))] transition-colors group">
+                  <div className="w-8 h-8 rounded-full bg-accent flex items-center justify-center text-accent-foreground flex-shrink-0">
+                    <User className="h-4 w-4" />
+                  </div>
+                  <div className="flex-1 text-left min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">User Name</p>
+                    <p className="text-xs text-muted-foreground truncate">user@example.com</p>
+                  </div>
+                  <Settings className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56 bg-[hsl(var(--message-ai-bg))] border-border">
+                <DropdownMenuItem className="cursor-pointer hover:bg-[hsl(var(--hover-bg))]">
+                  <User className="mr-2 h-4 w-4" />
+                  <span>Profile</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem className="cursor-pointer hover:bg-[hsl(var(--hover-bg))]">
+                  <Settings className="mr-2 h-4 w-4" />
+                  <span>Settings</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator className="bg-border" />
+                <DropdownMenuItem className="cursor-pointer hover:bg-[hsl(var(--hover-bg))] text-destructive focus:text-destructive">
+                  <LogOut className="mr-2 h-4 w-4" />
+                  <span>Log out</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <button className="w-full flex justify-center p-2 rounded-lg hover:bg-[hsl(var(--hover-bg))] transition-colors">
+              <div className="w-8 h-8 rounded-full bg-accent flex items-center justify-center text-accent-foreground">
+                <User className="h-4 w-4" />
+              </div>
+            </button>
+          )}
+        </div>
       </aside>
     </>
   );
