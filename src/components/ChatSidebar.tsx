@@ -11,6 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useAuth } from "@/hooks/useAuth";
 
 interface Chat {
   id: string;
@@ -35,6 +36,7 @@ export function ChatSidebar({
   onChatSelect,
   onNewChat,
 }: ChatSidebarProps) {
+  const { user, signOut } = useAuth();
   return (
     <>
       {/* Mobile overlay */}
@@ -163,8 +165,8 @@ export function ChatSidebar({
                     <User className="h-4 w-4" />
                   </div>
                   <div className="flex-1 text-left min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">User Name</p>
-                    <p className="text-xs text-muted-foreground truncate">user@example.com</p>
+                    <p className="text-sm font-medium text-foreground truncate">{user?.user_metadata?.full_name || 'User'}</p>
+                    <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
                   </div>
                   <Settings className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                 </button>
@@ -179,7 +181,10 @@ export function ChatSidebar({
                   <span>Settings</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator className="bg-border" />
-                <DropdownMenuItem className="cursor-pointer hover:bg-[hsl(var(--hover-bg))] text-destructive focus:text-destructive">
+                <DropdownMenuItem 
+                  className="cursor-pointer hover:bg-[hsl(var(--hover-bg))] text-destructive focus:text-destructive"
+                  onClick={signOut}
+                >
                   <LogOut className="mr-2 h-4 w-4" />
                   <span>Log out</span>
                 </DropdownMenuItem>

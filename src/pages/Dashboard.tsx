@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
-import { TrendingUp, TrendingDown, DollarSign, Target, Calendar, BarChart3, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { TrendingUp, TrendingDown, DollarSign, Target, Calendar, BarChart3, ArrowUpRight, ArrowDownRight, Loader2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Layout } from "@/components/Layout";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/hooks/useAuth";
 
 interface Chat {
   id: string;
@@ -12,8 +14,28 @@ interface Chat {
 }
 
 const Dashboard = () => {
+  const { user, loading } = useAuth();
+  const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [chats, setChats] = useState<Chat[]>([]);
+
+  useEffect(() => {
+    if (!loading && !user) {
+      navigate("/auth");
+    }
+  }, [user, loading, navigate]);
+
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return null;
+  }
 
   useEffect(() => {
     const savedChats = localStorage.getItem("chats");
