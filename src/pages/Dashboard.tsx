@@ -121,7 +121,7 @@ const Dashboard = () => {
                 Track your performance and analyze your trading journey
               </p>
             </div>
-            <Link to="/">
+            <Link to="/chat">
               <Button className="bg-accent hover:bg-accent/90 text-accent-foreground">
                 Back to Journal
               </Button>

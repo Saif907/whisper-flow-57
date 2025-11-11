@@ -1,6 +1,7 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { 
@@ -31,6 +32,8 @@ import {
 
 const Landing = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { user, loading } = useAuth();
+  const navigate = useNavigate();
 
   const features = [
     {
@@ -206,10 +209,21 @@ const Landing = () => {
           <div className="hidden md:flex items-center gap-4">
             <a href="#about" className="text-sm hover:text-primary smooth-transition">About Us</a>
             <a href="#contact" className="text-sm hover:text-primary smooth-transition">Contact</a>
-            <Link to="/auth" className="text-sm hover:text-primary smooth-transition">Sign In</Link>
-            <Button asChild className="rounded-full" size="sm">
-              <Link to="/auth">Start for Free</Link>
-            </Button>
+            {!loading && (user ? (
+              <>
+                <Link to="/dashboard" className="text-sm hover:text-primary smooth-transition">Dashboard</Link>
+                <Button asChild className="rounded-full" size="sm">
+                  <Link to="/chat">Go to Journal</Link>
+                </Button>
+              </>
+            ) : (
+              <>
+                <Link to="/auth" className="text-sm hover:text-primary smooth-transition">Sign In</Link>
+                <Button asChild className="rounded-full" size="sm">
+                  <Link to="/auth">Start for Free</Link>
+                </Button>
+              </>
+            ))}
           </div>
 
           {/* Mobile Menu Button */}
@@ -231,10 +245,21 @@ const Landing = () => {
               <a href="#pricing" className="text-sm hover:text-primary smooth-transition" onClick={() => setMobileMenuOpen(false)}>Pricing</a>
               <a href="#about" className="text-sm hover:text-primary smooth-transition" onClick={() => setMobileMenuOpen(false)}>About Us</a>
               <a href="#contact" className="text-sm hover:text-primary smooth-transition" onClick={() => setMobileMenuOpen(false)}>Contact</a>
-              <Link to="/auth" className="text-sm hover:text-primary smooth-transition" onClick={() => setMobileMenuOpen(false)}>Sign In</Link>
-              <Button asChild className="rounded-full w-full">
-                <Link to="/auth">Start for Free</Link>
-              </Button>
+              {!loading && (user ? (
+                <>
+                  <Link to="/dashboard" className="text-sm hover:text-primary smooth-transition" onClick={() => setMobileMenuOpen(false)}>Dashboard</Link>
+                  <Button asChild className="rounded-full w-full">
+                    <Link to="/chat">Go to Journal</Link>
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Link to="/auth" className="text-sm hover:text-primary smooth-transition" onClick={() => setMobileMenuOpen(false)}>Sign In</Link>
+                  <Button asChild className="rounded-full w-full">
+                    <Link to="/auth">Start for Free</Link>
+                  </Button>
+                </>
+              ))}
             </nav>
           </div>
         )}
