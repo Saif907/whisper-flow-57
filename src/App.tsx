@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Landing from "./pages/Landing";
 import Index from "./pages/Index";
 import Dashboard from "./pages/Dashboard";
+import Trades from "./pages/Trades";
 import Auth from "./pages/Auth";
 import Privacy from "./pages/Privacy";
 import NotFound from "./pages/NotFound";
@@ -30,6 +31,7 @@ const App = () => (
           <Route path="/" element={<Landing />} />
           <Route path="/chat" element={<Index />} />
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/trades" element={<Trades />} />
           <Route path="/auth" element={<Auth />} />
           <Route path="/privacy" element={<Privacy />} />
           

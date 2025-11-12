@@ -212,6 +212,7 @@ const Landing = () => {
             {!loading && (user ? (
               <>
                 <Link to="/dashboard" className="text-sm hover:text-primary smooth-transition">Dashboard</Link>
+                <Link to="/trades" className="text-sm hover:text-primary smooth-transition">Trades</Link>
                 <Button asChild className="rounded-full" size="sm">
                   <Link to="/chat">Go to Journal</Link>
                 </Button>
@@ -248,6 +249,7 @@ const Landing = () => {
               {!loading && (user ? (
                 <>
                   <Link to="/dashboard" className="text-sm hover:text-primary smooth-transition" onClick={() => setMobileMenuOpen(false)}>Dashboard</Link>
+                  <Link to="/trades" className="text-sm hover:text-primary smooth-transition" onClick={() => setMobileMenuOpen(false)}>Trades</Link>
                   <Button asChild className="rounded-full w-full">
                     <Link to="/chat">Go to Journal</Link>
                   </Button>

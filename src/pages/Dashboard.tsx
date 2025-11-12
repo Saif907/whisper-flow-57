@@ -162,7 +162,14 @@ const Dashboard = () => {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card className="p-6 bg-[hsl(var(--message-ai-bg))] border-border">
-              <h2 className="text-xl font-semibold text-foreground mb-4">Recent Trades</h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold text-foreground">Recent Trades</h2>
+                <Link to="/trades">
+                  <Button variant="ghost" size="sm" className="text-accent hover:text-accent/90">
+                    View All →
+                  </Button>
+                </Link>
+              </div>
               <div className="space-y-3">
                 {recentTrades.map((trade, idx) => (
                   <div

@@ -1,4 +1,4 @@
-import { Plus, Search, MessageSquare, Menu, X, Library, User, Settings, LogOut } from "lucide-react";
+import { Plus, Search, MessageSquare, Menu, X, Library, User, Settings, LogOut, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -76,22 +76,39 @@ export function ChatSidebar({
           )}
         </div>
 
-        {/* Dashboard Link */}
+        {/* Navigation Links */}
         {isOpen ? (
-          <Link
-            to="/dashboard"
-            className="flex items-center gap-3 mx-3 mt-3 px-3 py-2 rounded-lg text-muted-foreground hover:bg-[hsl(var(--hover-bg))] hover:text-foreground transition-all duration-200"
-          >
-            <Library className="h-5 w-5" />
-            <span className="text-sm font-medium">Dashboard</span>
-          </Link>
+          <div className="space-y-1 mx-3 mt-3">
+            <Link
+              to="/dashboard"
+              className="flex items-center gap-3 px-3 py-2 rounded-lg text-muted-foreground hover:bg-[hsl(var(--hover-bg))] hover:text-foreground transition-all duration-200"
+            >
+              <Library className="h-5 w-5" />
+              <span className="text-sm font-medium">Dashboard</span>
+            </Link>
+            <Link
+              to="/trades"
+              className="flex items-center gap-3 px-3 py-2 rounded-lg text-muted-foreground hover:bg-[hsl(var(--hover-bg))] hover:text-foreground transition-all duration-200"
+            >
+              <TrendingUp className="h-5 w-5" />
+              <span className="text-sm font-medium">Trades</span>
+            </Link>
+          </div>
         ) : (
-          <Link
-            to="/dashboard"
-            className="flex justify-center mt-3 p-2 mx-2 rounded-lg text-muted-foreground hover:bg-[hsl(var(--hover-bg))] hover:text-foreground transition-colors"
-          >
-            <Library className="h-5 w-5" />
-          </Link>
+          <div className="space-y-1 mt-3 mx-2">
+            <Link
+              to="/dashboard"
+              className="flex justify-center p-2 rounded-lg text-muted-foreground hover:bg-[hsl(var(--hover-bg))] hover:text-foreground transition-colors"
+            >
+              <Library className="h-5 w-5" />
+            </Link>
+            <Link
+              to="/trades"
+              className="flex justify-center p-2 rounded-lg text-muted-foreground hover:bg-[hsl(var(--hover-bg))] hover:text-foreground transition-colors"
+            >
+              <TrendingUp className="h-5 w-5" />
+            </Link>
+          </div>
         )}
 
         {/* Search (when expanded) */}
