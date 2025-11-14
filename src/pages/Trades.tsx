@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
-// REMOVED: import { supabase } from "@/integrations/supabase/client";
 import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,30 +11,21 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Plus, TrendingUp, TrendingDown, DollarSign, Activity, Search, Edit, Trash2, ArrowUpDown, Download } from "lucide-react";
+import { Plus, TrendingUp, TrendingDown, DollarSign, Activity, Search, Edit, Trash2, ArrowUpDown, Download, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
-import { tradeAPI } from "@/lib/api"; // ADDED
+import { tradeAPI } from "@/lib/api";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"; // IMPORTED
+import { Trade } from "@/types/app"; // IMPORTED: Use centralized type
 
-interface Trade {
-  id: string;
-  ticker: string;
-  entry_price: number;
-  exit_price: number | null;
-  quantity: number;
-  entry_date: string;
-  exit_date: string | null;
-  profit_loss: number | null;
-  created_at: string;
-  notes: string | null;
-}
+// REMOVED: Local Trade interface definition
 
 export default function Trades() {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
-  const [trades, setTrades] = useState<Trade[]>([]);
+  const queryClient = useQueryClient(); // Initialized Query Client
+  
   const [filteredTrades, setFilteredTrades] = useState<Trade[]>([]);
-  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<"all" | "open" | "closed">("all");
   const [sortBy, setSortBy] = useState<"date" | "profit" | "ticker">("date");
@@ -57,47 +47,60 @@ export default function Trades() {
     notes: "",
   });
 
-  // Statistics
-  const totalTrades = trades.length;
-  const closedTrades = trades.filter(t => t.exit_price !== null);
-  const openTrades = trades.filter(t => t.exit_price === null);
-  const totalProfitLoss = closedTrades.reduce((sum, t) => sum + (t.profit_loss || 0), 0);
-  const winningTrades = closedTrades.filter(t => (t.profit_loss || 0) > 0).length;
-  const winRate = closedTrades.length > 0 ? (winningTrades / closedTrades.length) * 100 : 0;
+  // 1. FETCH TRADES USING USEQUERY (Smooth Functioning/Caching)
+  const { data: trades, isLoading, isError } = useQuery<Trade[]>({
+    queryKey: ['trades'],
+    queryFn: tradeAPI.getTrades,
+    enabled: !!user,
+  });
 
+  // 2. MUTATIONS FOR WRITES
+  const saveMutation = useMutation({
+    mutationFn: (tradeData: any) => {
+      if (editingTrade) {
+        return tradeAPI.updateTrade(editingTrade.id, tradeData);
+      }
+      return tradeAPI.createTrade(tradeData);
+    },
+    onSuccess: () => {
+      // Invalidate the cache to trigger a background refetch
+      queryClient.invalidateQueries({ queryKey: ['trades'] });
+      toast.success(`Trade ${editingTrade ? 'updated' : 'added'} successfully`);
+      resetForm();
+      setDialogOpen(false);
+    },
+    onError: (error) => {
+      console.error("Error saving trade:", error);
+      toast.error(`Failed to save trade: ${error.message}`);
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (tradeId: string) => tradeAPI.deleteTrade(tradeId),
+    onSuccess: () => {
+      // Invalidate the cache to trigger a background refetch
+      queryClient.invalidateQueries({ queryKey: ['trades'] });
+      toast.success("Trade deleted successfully");
+      setDeleteDialogOpen(false);
+      setTradeToDelete(null);
+    },
+    onError: (error) => {
+      console.error("Error deleting trade:", error);
+      toast.error(`Failed to delete trade: ${error.message}`);
+    },
+  });
+
+  // Redirect Logic
   useEffect(() => {
     if (!authLoading && !user) {
       navigate("/auth");
     }
   }, [user, authLoading, navigate]);
 
+  // Filtering and Sorting Logic (Updated to use 'trades' from useQuery)
   useEffect(() => {
-    if (user) {
-      loadTrades();
-    }
-  }, [user]);
-
-  useEffect(() => {
-    filterAndSortTrades();
-  }, [trades, searchQuery, filterStatus, sortBy, sortOrder]);
-
-  const loadTrades = async () => {
-    try {
-      setLoading(true);
-      // REPLACED: Supabase direct call with API call
-      const data = await tradeAPI.getTrades();
-      
-      setTrades(data || []);
-    } catch (error) {
-      console.error("Error loading trades:", error);
-      toast.error("Failed to load trades");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const filterAndSortTrades = () => {
-    let filtered = [...trades];
+    const currentTrades = trades || [];
+    let filtered = [...currentTrades];
 
     // Apply search filter
     if (searchQuery) {
@@ -130,48 +133,43 @@ export default function Trades() {
     });
 
     setFilteredTrades(filtered);
-  };
+  }, [trades, searchQuery, filterStatus, sortBy, sortOrder]);
+
+
+  // Statistics calculation (Now uses 'trades' from useQuery)
+  const allTrades = trades || [];
+  const totalTrades = allTrades.length;
+  const closedTrades = allTrades.filter(t => t.exit_price !== null);
+  const openTrades = allTrades.filter(t => t.exit_price === null);
+  const totalProfitLoss = closedTrades.reduce((sum, t) => sum + (t.profit_loss || 0), 0);
+  const winningTrades = closedTrades.filter(t => (t.profit_loss || 0) > 0).length;
+  const winRate = closedTrades.length > 0 ? (winningTrades / closedTrades.length) * 100 : 0;
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    try {
-      const entryPrice = parseFloat(formData.entry_price);
-      const exitPrice = formData.exit_price ? parseFloat(formData.exit_price) : null;
-      const quantity = parseInt(formData.quantity);
+    const entryPrice = parseFloat(formData.entry_price);
+    const exitPrice = formData.exit_price ? parseFloat(formData.exit_price) : null;
+    const quantity = parseInt(formData.quantity);
       
-      // Removed local profitLoss calculation, backend handles it
-      
-      const tradeData = {
-        ticker: formData.ticker.toUpperCase(),
-        entry_price: entryPrice,
-        exit_price: exitPrice,
-        quantity,
-        entry_date: formData.entry_date,
-        exit_date: formData.exit_date || null,
-        notes: formData.notes || null,
-        // Removed: profit_loss & user_id fields, handled by backend
-      };
+    const tradeData = {
+      ticker: formData.ticker.toUpperCase(),
+      entry_price: entryPrice,
+      exit_price: exitPrice,
+      quantity,
+      entry_date: formData.entry_date,
+      exit_date: formData.exit_date || null,
+      notes: formData.notes || null,
+    };
 
-      if (editingTrade) {
-        // REPLACED: Supabase direct update with API call
-        await tradeAPI.updateTrade(editingTrade.id, tradeData);
+    // Use mutation instead of direct API call
+    saveMutation.mutate(tradeData);
+  };
 
-        toast.success("Trade updated successfully");
-      } else {
-        // REPLACED: Supabase direct insert with API call
-        await tradeAPI.createTrade(tradeData);
-
-        toast.success("Trade added successfully");
-      }
-
-      resetForm();
-      setDialogOpen(false);
-      loadTrades();
-    } catch (error) {
-      console.error("Error saving trade:", error);
-      toast.error("Failed to save trade");
-    }
+  const handleDelete = async () => {
+    if (!tradeToDelete) return;
+    deleteMutation.mutate(tradeToDelete);
   };
 
   const handleEdit = (trade: Trade) => {
@@ -187,25 +185,7 @@ export default function Trades() {
     });
     setDialogOpen(true);
   };
-
-  const handleDelete = async () => {
-    if (!tradeToDelete) return;
-
-    try {
-      // REPLACED: Supabase direct delete with API call
-      await tradeAPI.deleteTrade(tradeToDelete);
-
-      toast.success("Trade deleted successfully");
-      loadTrades();
-    } catch (error) {
-      console.error("Error deleting trade:", error);
-      toast.error("Failed to delete trade");
-    } finally {
-      setDeleteDialogOpen(false);
-      setTradeToDelete(null);
-    }
-  };
-
+  
   const resetForm = () => {
     setFormData({
       ticker: "",
@@ -243,11 +223,34 @@ export default function Trades() {
     window.URL.revokeObjectURL(url);
   };
 
-  if (authLoading || loading) {
+  if (authLoading || isLoading) {
     return (
       <Layout sidebarOpen={true} onSidebarToggle={() => {}} chats={[]} activeChat={null} onChatSelect={() => {}} onNewChat={() => {}}>
         <div className="flex items-center justify-center h-screen">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      </Layout>
+    );
+  }
+  
+  // Display error message if fetching failed
+  if (isError) {
+    return (
+      <Layout sidebarOpen={true} onSidebarToggle={() => {}} chats={[]} activeChat={null} onChatSelect={() => {}} onNewChat={() => {}}>
+        <div className="flex items-center justify-center h-screen p-8 text-center">
+          <Card className="max-w-md w-full">
+            <CardHeader>
+              <CardTitle className="text-destructive">Data Loading Error</CardTitle>
+              <CardDescription>
+                We failed to load your trades. This usually means a network issue or a problem with the backend API.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button onClick={() => queryClient.invalidateQueries({ queryKey: ['trades'] })}>
+                Try Reloading Trades
+              </Button>
+            </CardContent>
+          </Card>
         </div>
       </Layout>
     );
@@ -272,8 +275,8 @@ export default function Trades() {
               if (!open) resetForm();
             }}>
               <DialogTrigger asChild>
-                <Button>
-                  <Plus className="w-4 h-4 mr-2" />
+                <Button disabled={saveMutation.isPending}>
+                  {saveMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
                   Add Trade
                 </Button>
               </DialogTrigger>
@@ -373,7 +376,8 @@ export default function Trades() {
                     }}>
                       Cancel
                     </Button>
-                    <Button type="submit">
+                    <Button type="submit" disabled={saveMutation.isPending}>
+                      {saveMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
                       {editingTrade ? "Update" : "Add"} Trade
                     </Button>
                   </DialogFooter>
@@ -486,11 +490,11 @@ export default function Trades() {
                 <Activity className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
                 <h3 className="text-lg font-semibold mb-2">No trades found</h3>
                 <p className="text-muted-foreground mb-4">
-                  {trades.length === 0 
+                  {(trades || []).length === 0 
                     ? "Start tracking your trades by adding your first trade"
                     : "Try adjusting your filters or search query"}
                 </p>
-                {trades.length === 0 && (
+                {(trades || []).length === 0 && (
                   <Button onClick={() => setDialogOpen(true)}>
                     <Plus className="w-4 h-4 mr-2" />
                     Add Your First Trade
@@ -577,8 +581,13 @@ export default function Trades() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+            <AlertDialogCancel disabled={deleteMutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDelete} 
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>

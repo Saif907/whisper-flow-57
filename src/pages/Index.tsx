@@ -1,5 +1,3 @@
-// src/pages/Index.tsx
-
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChatMessage } from "@/components/ChatMessage";
@@ -11,73 +9,208 @@ import { useAuth } from "@/hooks/useAuth";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { chatAPI } from "@/lib/api";
-
-interface Message {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-}
-
-interface Chat {
-  id: string;
-  title: string;
-  timestamp: Date;
-  messages: Message[];
-}
+import { Message, Chat } from "@/types/app";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"; // ADDED
 
 const Index = () => {
-  const { user, loading } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
+  const queryClient = useQueryClient(); // ADDED
+  
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [chats, setChats] = useState<Chat[]>([]);
   const [activeChat, setActiveChat] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Load chats from backend
-  useEffect(() => {
-    if (!user) return;
+  // --- 1. Queries for Reading Data (Chat List & Active Chat Messages) ---
+  
+  // Query for all chat sessions
+  const { data: chats = [], isLoading: isLoadingChats, isError: isErrorChats } = useQuery<Chat[]>({
+    queryKey: ['chats'],
+    queryFn: chatAPI.getChats,
+    enabled: !!user && !authLoading,
+    select: (data) => data.map((chat: any) => ({
+      ...chat,
+      timestamp: new Date(chat.created_at),
+      messages: [], // Messages will be populated by the dedicated chat query
+    }) as Chat),
+    // Use stale-while-revalidate strategy (default 0, but important for UX)
+    staleTime: 60 * 1000 * 5, // 5 minutes stale time
+    refetchOnWindowFocus: true, // Auto-refetch on tab focus (eliminates manual reloads)
+  });
 
-    const loadChats = async () => {
-      try {
-        const backendChats = await chatAPI.getChats();
+  // Query for the currently selected chat's messages
+  const { 
+    data: activeChatData,
+    isLoading: isLoadingActiveChat,
+    isError: isErrorActiveChat,
+    isFetching: isFetchingActiveChat,
+  } = useQuery<any>({
+    queryKey: ['chat', activeChat],
+    queryFn: () => chatAPI.getChat(activeChat!),
+    enabled: !!activeChat, // Only fetch if a chat is selected
+    select: (data) => ({
+      ...data.chat,
+      messages: data.messages.map((m: any) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content
+      })) as Message[],
+    } as Chat),
+  });
+
+  // --- 2. Mutations for Writing Data (Create Chat & Send Message) ---
+
+  const createChatMutation = useMutation({
+    mutationFn: (initialTitle: string) => chatAPI.createChat(initialTitle),
+    onSuccess: (newChat) => {
+      // Manually add the new chat to the cache for immediate display (optimistic UI)
+      const newChatData: Chat = {
+        id: newChat.id,
+        title: newChat.title,
+        timestamp: new Date(newChat.created_at),
+        messages: [],
+      };
+      queryClient.setQueryData(['chats'], (old: Chat[] = []) => [newChatData, ...old]);
+      
+      // Select the new chat
+      setActiveChat(newChat.id);
+    },
+    onError: (error) => {
+      console.error("Error creating chat:", error);
+      toast.error("Failed to create chat");
+    }
+  });
+  
+  const sendMessageMutation = useMutation({
+    mutationFn: ({ chatId, message }: { chatId: string, message: string }) => 
+      chatAPI.sendMessage(chatId, message),
+    onSuccess: (response, variables) => {
+      // 1. Manually update the active chat cache to append the new message instantly
+      queryClient.setQueryData(['chat', variables.chatId], (oldData: Chat | undefined) => {
+        if (!oldData) return oldData;
         
-        const chatsWithMessages = backendChats.map((chat: any) => ({
-          id: chat.id,
-          title: chat.title,
-          timestamp: new Date(chat.created_at),
-          messages: [] // Messages loaded separately when chat selected
-        }));
+        // Filter out the temporary messages we added optimistically
+        const filteredMessages = oldData.messages.filter(m => !m.id.startsWith('temp-'));
         
-        setChats(chatsWithMessages);
-        // Automatically select the most recent chat if available
-        if (chatsWithMessages.length > 0) {
-             handleChatSelect(chatsWithMessages[0].id);
-        }
-        
-      } catch (error) {
-        console.error("Error loading chats:", error);
-        toast.error("Failed to load chats");
+        // Re-add the user message (retaining optimistic content) and the final AI response
+        const userMessage = { id: `user-${Date.now()}`, role: "user", content: variables.message } as Message;
+        const finalAiMessage = { id: `ai-${Date.now()}-final`, role: "assistant", content: response.message } as Message;
+
+        return {
+          ...oldData,
+          messages: [...filteredMessages, userMessage, finalAiMessage],
+        } as Chat;
+      });
+
+      // 2. Invalidate chat query (for message count) and the chat list (for title updates)
+      queryClient.invalidateQueries({ queryKey: ['chats'] }); 
+      
+      if (response.trade_extracted) {
+        toast.success("Trade logged successfully!");
+        // Also invalidate trades list so Dashboard/Trades pages update
+        queryClient.invalidateQueries({ queryKey: ['trades'] }); 
       }
-    };
+    },
+    onError: (error, variables) => {
+      console.error("Error sending message:", error);
+      toast.error("Failed to send message. Please try again.");
+      
+      // On error, revert the optimistic update by removing temp messages
+      queryClient.setQueryData(['chat', variables.chatId], (oldData: Chat | undefined) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          messages: oldData.messages.filter(m => !m.id.startsWith('temp-')),
+        } as Chat;
+      });
+    },
+    onMutate: async ({ chatId, message }) => {
+      // Optimistic update: instantly show user message and typing indicator
+      await queryClient.cancelQueries({ queryKey: ['chat', chatId] }); // Stop any active fetching
 
-    loadChats();
-  }, [user]);
+      const userMessage: Message = { id: `temp-${Date.now()}-user`, role: "user", content: message };
+      const typingMessage: Message = { id: `temp-${Date.now()}-ai`, role: "assistant", content: "Processing your message..." };
+
+      queryClient.setQueryData(['chat', chatId], (oldData: Chat | undefined) => {
+        if (!oldData) return oldData;
+        
+        // Find existing messages (excluding old temp messages)
+        const currentMessages = oldData.messages.filter(m => !m.id.startsWith('temp-'));
+        
+        return {
+          ...oldData,
+          messages: [...currentMessages, userMessage, typingMessage],
+        } as Chat;
+      });
+
+      setIsTyping(true);
+    },
+    onSettled: () => {
+      setIsTyping(false);
+    }
+  });
+
+
+  // --- 3. Unified Handlers (Connecting UI to Mutations/Queries) ---
+
+  const handleNewChat = (initialTitle = "New chat") => {
+    if (!user) return;
+    createChatMutation.mutate(initialTitle);
+  };
+
+  const handleChatSelect = (chatId: string) => {
+    setActiveChat(chatId);
+  };
+
+  const handleSendMessage = async (content: string) => {
+    if (!user || isTyping) return;
+
+    let targetChatId = activeChat;
+    
+    // Step 1: Handle Chat Creation if no chat is active
+    if (!targetChatId) {
+      // NOTE: Mutation handlers for optimistic update are in sendMessageMutation now.
+      // We start with a simplified process here to get the chat ID quickly.
+      const tempChatTitle = content.slice(0, 50);
+      const newChatResponse = await createChatMutation.mutateAsync(tempChatTitle);
+      targetChatId = newChatResponse.id;
+      setActiveChat(newChatResponse.id);
+      
+      // Optimistically update chat title in the newly created chat
+      queryClient.setQueryData(['chat', targetChatId], (oldData: Chat | undefined) => {
+        if (!oldData) return oldData;
+        return { ...oldData, title: tempChatTitle } as Chat;
+      });
+    }
+
+    // Step 2: Send Message
+    sendMessageMutation.mutate({ chatId: targetChatId!, message: content });
+  };
+  
+  const handleSuggestionClick = (text: string) => {
+    handleSendMessage(text);
+  };
 
   // Auto-scroll to bottom
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [activeChat, chats]);
+    // Dependency only needs to be the chat data, not the messages list itself
+  }, [activeChatData]); 
+
+
+  // --- 4. Render Logic with Loading/Error States ---
 
   useEffect(() => {
-    if (!loading && !user) {
+    if (!authLoading && !user) {
       navigate("/auth");
     }
-  }, [user, loading, navigate]);
+  }, [user, authLoading, navigate]);
 
-  if (loading) {
+  // Global loading state (only show spinner on initial auth or initial chat load)
+  if (authLoading || isLoadingChats) {
     return (
       <div className="flex h-screen items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -89,185 +222,49 @@ const Index = () => {
     return null;
   }
 
-  const currentChat = chats.find((c) => c.id === activeChat);
+  const currentChat = activeChatData;
+  const isInitialState = !currentChat || currentChat.messages.length === 0;
 
-  const handleNewChat = async (initialTitle = "New chat") => {
-    if (!user) return null; // Return null on auth failure
-
-    try {
-      const newChat = await chatAPI.createChat(initialTitle);
-      
-      const chatData: Chat = {
-        id: newChat.id,
-        title: newChat.title,
-        timestamp: new Date(newChat.created_at),
-        messages: [],
-      };
-
-      setChats((prev) => [chatData, ...prev]);
-      setActiveChat(newChat.id);
-      return chatData; // Return the new chat data
-    } catch (error) {
-      console.error("Error creating chat:", error);
-      toast.error("Failed to create chat");
-      return null;
-    }
-  };
-
-  const handleChatSelect = async (chatId: string) => {
-    try {
-      // Set active chat immediately to show loading spinner
-      setActiveChat(chatId);
-      
-      const response = await chatAPI.getChat(chatId);
-      
-      // Update chat with messages
-      setChats(prev => prev.map(c => 
-        c.id === chatId 
-          ? {
-              ...c,
-              messages: (response.messages || []).map((m: any) => ({
-                id: m.id,
-                role: m.role,
-                content: m.content
-              })),
-              title: response.chat.title, // Update title if it changed on backend
-            }
-          : c
-      ));
-      
-    } catch (error) {
-      console.error("Error loading chat:", error);
-      toast.error("Failed to load chat");
-    }
-  };
-
-  const handleSendMessage = async (content: string) => {
-    if (!user || isTyping) return;
-
-    let targetChatId = activeChat;
-    let initialMessage = false;
-    const optimisticUserMessageId = `temp-${Date.now()}-user`;
-    const typingMessageId = `temp-${Date.now()}-ai`;
-
-    // 1. Handle Chat Creation if necessary
-    if (!targetChatId) {
-      const newChat = await handleNewChat(content.slice(0, 50));
-      if (!newChat) return; // Stop if chat creation fails
-      targetChatId = newChat.id;
-      initialMessage = true;
-    }
-
-    // 2. Optimistically update UI with user message and typing indicator
-    const userMessage: Message = {
-      id: optimisticUserMessageId,
-      role: "user",
-      content,
-    };
-    
-    const typingMessage: Message = {
-        id: typingMessageId,
-        role: "assistant",
-        content: "Processing your message...",
-    };
-
-    setChats((prev) =>
-      prev.map((chat) =>
-        chat.id === targetChatId
-          ? {
-              ...chat,
-              title: initialMessage ? content.slice(0, 50) : chat.title,
-              messages: [...chat.messages, userMessage, typingMessage],
-            }
-          : chat
-      )
-    );
-
-    setIsTyping(true);
-
-    try {
-      // 3. Send message to backend AI
-      const response = await chatAPI.sendMessage(targetChatId, content);
-
-      // 4. Update state to replace optimistic data with real AI response
-      const aiResponseContent = response.message;
-      const finalAiMessage: Message = {
-          id: `ai-${Date.now()}-final`,
-          role: "assistant",
-          content: aiResponseContent,
-      };
-
-      setChats((prev) =>
-        prev.map((chat) => {
-          if (chat.id !== targetChatId) return chat;
-
-          // Filter out the temporary user and typing messages
-          const newMessages = chat.messages.filter(m => 
-            m.id !== optimisticUserMessageId && m.id !== typingMessageId
-          );
-          
-          // Re-add the user message (retaining optimistic content)
-          newMessages.push(userMessage);
-
-          // Add the final AI message
-          newMessages.push(finalAiMessage);
-
-          return { ...chat, messages: newMessages };
-        })
-      );
-      
-      // Show success if trade extracted
-      if (response.trade_extracted) {
-        toast.success("Trade logged successfully!");
-      }
-    } catch (error) {
-      console.error("Error sending message:", error);
-      toast.error("Failed to send message. Please try again.");
-      
-      // Remove optimistic user message and typing indicator on error
-      setChats((prev) =>
-        prev.map((chat) =>
-          chat.id === targetChatId
-            ? { ...chat, messages: chat.messages.filter(m => m.id !== optimisticUserMessageId && m.id !== typingMessageId) }
-            : chat
-        )
-      );
-    } finally {
-      setIsTyping(false);
-    }
-  };
-
-  const handleSuggestionClick = (text: string) => {
-    handleSendMessage(text);
-  };
+  // Show a simpler loading/error for messages while the list is already loaded
+  const chatMessagesContent = (isLoadingActiveChat || isFetchingActiveChat) ? (
+    <div className="flex flex-col flex-1 items-center justify-center h-96">
+      <Loader2 className="h-6 w-6 animate-spin text-primary" />
+      <p className="text-sm text-muted-foreground mt-3">Loading chat history...</p>
+    </div>
+  ) : (
+    <ScrollArea className="flex-1" ref={scrollRef}>
+      <div className="space-y-0">
+        {currentChat?.messages.map((message) => (
+          <ChatMessage
+            key={message.id}
+            role={message.role as "user" | "assistant"}
+            content={message.content}
+          />
+        ))}
+      </div>
+    </ScrollArea>
+  );
 
   return (
     <Layout
       sidebarOpen={sidebarOpen}
       onSidebarToggle={() => setSidebarOpen(!sidebarOpen)}
-      chats={chats}
+      chats={chats} // Passing cached chat list
       activeChat={activeChat}
       onChatSelect={handleChatSelect}
-      onNewChat={() => handleNewChat()}
+      onNewChat={handleNewChat}
     >
       <div className="flex-1 flex flex-col h-screen">
-        {!currentChat || currentChat.messages.length === 0 ? (
+        {isInitialState ? (
           <ChatWelcome onSuggestionClick={handleSuggestionClick} />
         ) : (
-          <ScrollArea className="flex-1" ref={scrollRef}>
-            <div className="space-y-0">
-              {currentChat.messages.map((message) => (
-                <ChatMessage
-                  key={message.id}
-                  role={message.role}
-                  content={message.content}
-                />
-              ))}
-            </div>
-          </ScrollArea>
+          chatMessagesContent
         )}
 
-        <ChatInput onSend={handleSendMessage} disabled={isTyping} />
+        <ChatInput 
+          onSend={handleSendMessage} 
+          disabled={isTyping || sendMessageMutation.isPending || createChatMutation.isPending} 
+        />
       </div>
     </Layout>
   );

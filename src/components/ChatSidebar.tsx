@@ -12,17 +12,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/useAuth";
+import { Chat } from "@/types/app"; // IMPORTED: Use centralized type
 
-interface Chat {
-  id: string;
-  title: string;
-  timestamp: Date;
-}
+// REMOVED: The local Chat interface definition has been deleted.
 
 interface ChatSidebarProps {
   isOpen: boolean;
   onToggle: () => void;
-  chats: Chat[];
+  chats: Chat[]; // Now uses imported Chat interface
   activeChat: string | null;
   onChatSelect: (id: string) => void;
   onNewChat: () => void;

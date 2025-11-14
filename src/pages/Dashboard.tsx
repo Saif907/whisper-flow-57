@@ -7,18 +7,15 @@ import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { Chat } from "@/types/app"; // IMPORTED: Use centralized type
 
-interface Chat {
-  id: string;
-  title: string;
-  timestamp: Date;
-}
+// REMOVED: The local Chat interface definition has been deleted.
 
 const Dashboard = () => {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [chats, setChats] = useState<Chat[]>([]);
+  const [chats, setChats] = useState<Chat[]>([]); // Now uses imported Chat interface
 
   useEffect(() => {
     if (!loading && !user) {
@@ -41,6 +38,8 @@ const Dashboard = () => {
   useEffect(() => {
     if (!user) return;
 
+    // NOTE: This fetch logic is currently synchronous client-side fetch.
+    // It will be replaced by TanStack Query in a future step to enable caching (browser front-end caching).
     const loadChats = async () => {
       const { data } = await supabase
         .from("chats")
@@ -54,6 +53,7 @@ const Dashboard = () => {
             id: chat.id,
             title: chat.title,
             timestamp: new Date(chat.created_at),
+            messages: [], // Initialize empty messages array to satisfy the Chat interface
           }))
         );
       }

@@ -42,6 +42,12 @@ async function apiClient(endpoint: string, options: RequestInit = {}) {
     throw new Error(error.detail || `API Error: ${response.status}`);
   }
   
+  // FIXED: Check for 204 No Content status before attempting to parse JSON.
+  // This prevents the "Unexpected end of JSON input" error.
+  if (response.status === 204) {
+    return null;
+  }
+  
   return response.json();
 }
 // Chat API

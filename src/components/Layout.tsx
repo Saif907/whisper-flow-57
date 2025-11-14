@@ -1,17 +1,14 @@
 import { ReactNode } from "react";
 import { ChatSidebar } from "@/components/ChatSidebar";
+import { Chat } from "@/types/app"; // IMPORTED: Use centralized type
 
-interface Chat {
-  id: string;
-  title: string;
-  timestamp: Date;
-}
+// REMOVED: The local Chat interface definition has been deleted.
 
 interface LayoutProps {
   children: ReactNode;
   sidebarOpen: boolean;
   onSidebarToggle: () => void;
-  chats: Chat[];
+  chats: Chat[]; // Now uses imported Chat interface
   activeChat: string | null;
   onChatSelect: (id: string) => void;
   onNewChat: () => void;
@@ -57,7 +54,7 @@ export function Layout({
         chats={chats}
         activeChat={activeChat}
         onChatSelect={onChatSelect}
-        onNewChat={onNewChat}
+      onNewChat={onNewChat}
       />
       <div className="flex-1 overflow-auto pt-14 lg:pt-0">
         {children}
