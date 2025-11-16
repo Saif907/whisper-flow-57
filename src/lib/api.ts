@@ -43,7 +43,6 @@ async function apiClient(endpoint: string, options: RequestInit = {}) {
   }
   
   // FIXED: Check for 204 No Content status before attempting to parse JSON.
-  // This prevents the "Unexpected end of JSON input" error.
   if (response.status === 204) {
     return null;
   }
@@ -122,5 +121,25 @@ export const tradeAPI = {
       method: "POST",
       body: JSON.stringify({}),
     });
+  },
+};
+
+// INTERNAL CONSOLE API
+export const internalAPI = {
+  // Get all users with combined metrics
+  getUsers: async () => {
+    return apiClient("/internal/users");
+  },
+  // Get overview dashboard metrics
+  getOverviewMetrics: async () => {
+    return apiClient("/internal/metrics");
+  },
+  // Get aggregate trade analytics
+  getAnalytics: async () => {
+    return apiClient("/internal/analytics");
+  },
+  // Get billing and plan metrics
+  getBillingMetrics: async () => {
+    return apiClient("/internal/billing");
   },
 };

@@ -1,21 +1,49 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { supabase } from "@/integrations/supabase/client";
-import { Users, MessageSquare, TrendingUp, Zap, ArrowUp, ArrowDown } from "lucide-react";
+// REMOVED: import { supabase } from "@/integrations/supabase/client";
+import { Users, MessageSquare, TrendingUp, Zap, ArrowUp, ArrowDown, Loader2 } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { useFounderCheck } from "@/hooks/useFounderCheck";
 import { InternalLayout } from "@/components/InternalLayout";
+import { useQuery } from "@tanstack/react-query"; // IMPORTED
+import { internalAPI } from "@/lib/api"; // IMPORTED
+
+// Interface matching the backend's OverviewMetrics model
+interface MetricsData {
+    totalUsers: number;
+    activeUsersWeek: number;
+    totalTrades: number;
+    totalChats: number;
+}
+
+// Function to fetch metrics from the dedicated backend endpoint
+const fetchInternalMetrics = async (roleLoading: boolean, isFounder: boolean): Promise<MetricsData> => {
+    if (roleLoading || !isFounder) {
+        throw new Error("Access Denied");
+    }
+    // Call the new dedicated, efficient API endpoint
+    return internalAPI.getOverviewMetrics();
+};
+
 
 export default function Overview() {
-  const { loading: roleLoading } = useFounderCheck();
-  const [metrics, setMetrics] = useState({
-    totalUsers: 0,
-    activeUsersWeek: 0,
-    totalTrades: 0,
-    totalChats: 0,
+  const { isFounder, loading: roleLoading } = useFounderCheck();
+
+  // 1. Use useQuery to fetch and cache metrics
+  const { 
+    data: metrics, 
+    isLoading, 
+    isError
+  } = useQuery<MetricsData>({
+    queryKey: ['internal-overview-metrics'],
+    queryFn: () => fetchInternalMetrics(roleLoading, isFounder),
+    enabled: isFounder && !roleLoading,
+    staleTime: 60 * 1000, // Cache for 1 minute
+    refetchOnWindowFocus: true,
   });
 
-  const [userGrowth] = useState([
+  // Mock Data (Placeholder for charts - these would eventually come from a different API)
+  const userGrowth = [
     { date: "Mon", users: 12 },
     { date: "Tue", users: 19 },
     { date: "Wed", users: 25 },
@@ -23,90 +51,66 @@ export default function Overview() {
     { date: "Fri", users: 42 },
     { date: "Sat", users: 38 },
     { date: "Sun", users: 45 },
-  ]);
+  ];
 
-  const [tradeActivity] = useState([
+  const tradeActivity = [
     { day: "Mon", trades: 34 },
     { day: "Tue", trades: 52 },
     { day: "Wed", trades: 41 },
     { day: "Thu", trades: 67 },
     { day: "Fri", trades: 88 },
-  ]);
+  ];
+  
+  const currentMetrics = metrics || { totalUsers: 0, activeUsersWeek: 0, totalTrades: 0, totalChats: 0 };
 
-  useEffect(() => {
-    const fetchMetrics = async () => {
-      try {
-        const { count: usersCount } = await supabase
-          .from("profiles")
-          .select("*", { count: "exact", head: true });
 
-        const weekAgo = new Date();
-        weekAgo.setDate(weekAgo.getDate() - 7);
-
-        const { count: activeCount } = await supabase
-          .from("profiles")
-          .select("*", { count: "exact", head: true })
-          .gte("updated_at", weekAgo.toISOString());
-
-        const { count: tradesCount } = await supabase
-          .from("trades")
-          .select("*", { count: "exact", head: true });
-
-        const { count: chatsCount } = await supabase
-          .from("chats")
-          .select("*", { count: "exact", head: true });
-
-        setMetrics({
-          totalUsers: usersCount || 0,
-          activeUsersWeek: activeCount || 0,
-          totalTrades: tradesCount || 0,
-          totalChats: chatsCount || 0,
-        });
-      } catch (error) {
-        console.error("Error fetching metrics:", error);
-      }
-    };
-
-    if (!roleLoading) {
-      fetchMetrics();
-    }
-  }, [roleLoading]);
-
-  if (roleLoading) {
+  // 2. Consolidate Loading and Error States
+  if (roleLoading || isLoading) {
     return (
       <InternalLayout>
         <div className="flex items-center justify-center h-96">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          <Loader2 className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
         </div>
       </InternalLayout>
     );
   }
 
+  if (!isFounder || isError) {
+      return (
+        <InternalLayout>
+          <div className="text-center py-12">
+             <h2 className="text-xl font-bold text-destructive">Access Denied or Data Error</h2>
+             <p className="text-muted-foreground mt-2">Could not retrieve platform metrics. This is usually due to permission issues or a backend fault.</p>
+          </div>
+        </InternalLayout>
+      );
+  }
+
   const stats = [
     {
       title: "Total Users",
-      value: metrics.totalUsers,
+      value: currentMetrics.totalUsers,
       change: "+12%",
       trend: "up",
       icon: Users,
     },
     {
       title: "Active This Week",
-      value: metrics.activeUsersWeek,
+      value: currentMetrics.activeUsersWeek,
       change: "+8%",
       trend: "up",
       icon: Zap,
     },
     {
       title: "Total Trades",
-      value: metrics.totalTrades,
+      value: currentMetrics.totalTrades,
       change: "+23%",
       trend: "up",
       icon: TrendingUp,
     },
     {
       title: "AI Sessions",
-      value: metrics.totalChats,
+      value: currentMetrics.totalChats,
       change: "+15%",
       trend: "up",
       icon: MessageSquare,

@@ -4,45 +4,99 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { Save } from "lucide-react";
+import { Save, Loader2 } from "lucide-react";
 import { useFounderCheck } from "@/hooks/useFounderCheck";
 import { InternalLayout } from "@/components/InternalLayout";
+import { useQuery } from "@tanstack/react-query"; // IMPORTED: For caching
+
+// Interface for the feature flags
+interface FeatureFlags {
+    aiStrategyPlanner: boolean;
+    emotionTagging: boolean;
+    journalSummarization: boolean;
+    patternRecognition: boolean;
+    socialSharing: boolean;
+    advancedCharts: boolean;
+    mobileApp: boolean;
+    emailDigests: boolean;
+}
+
+// Function to simulate fetching/loading initial configuration (MOCK)
+const fetchInternalConfig = async (): Promise<FeatureFlags> => {
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 500)); 
+
+    // MOCK DATA (to be replaced by actual backend API call)
+    return {
+        aiStrategyPlanner: true,
+        emotionTagging: true,
+        journalSummarization: true,
+        patternRecognition: false,
+        socialSharing: false,
+        advancedCharts: true,
+        mobileApp: true,
+        emailDigests: true,
+    };
+};
+
 
 export default function Configuration() {
-  const { loading: roleLoading } = useFounderCheck();
+  const { isFounder, loading: roleLoading } = useFounderCheck();
   const { toast } = useToast();
 
-  const [features, setFeatures] = useState({
-    aiStrategyPlanner: true,
-    emotionTagging: true,
-    journalSummarization: true,
-    patternRecognition: false,
-    socialSharing: false,
-    advancedCharts: true,
-    mobileApp: true,
-    emailDigests: true,
+  // 1. Fetch initial configuration using useQuery
+  const { data: initialFeatures, isLoading, isError } = useQuery<FeatureFlags>({
+    queryKey: ['internal-config'],
+    queryFn: fetchInternalConfig,
+    enabled: isFounder && !roleLoading,
+    staleTime: 60 * 1000 * 10, // Highly stable data, cache for 10 minutes
   });
 
-  const handleToggle = (feature: keyof typeof features) => {
-    setFeatures((prev) => ({ ...prev, [feature]: !prev[feature] }));
+  // 2. Use a local state for editing, initialized from the fetched/cached data
+  const [features, setFeatures] = useState<FeatureFlags | null>(null);
+
+  // Initialize features state once data is loaded/cached
+  // Use a simple useEffect/if check to handle initialization from query data
+  if (initialFeatures && !features) {
+    setFeatures(initialFeatures);
+  }
+
+  const handleToggle = (feature: keyof FeatureFlags) => {
+    if (!features) return;
+    setFeatures((prev) => ({ ...prev!, [feature]: !prev![feature] }));
   };
 
   const handleSave = () => {
+    // NOTE: In a real app, this would use a useMutation hook to call the backend API
+    console.log("Saving configuration:", features);
     toast({
       title: "Configuration Saved",
-      description: "Feature flags have been updated successfully.",
+      description: "Feature flags have been updated successfully (Simulated).",
     });
   };
 
-  if (roleLoading) {
+  // 3. Consolidate Loading and Error States
+  if (roleLoading || isLoading || !features) {
     return (
       <InternalLayout>
         <div className="flex items-center justify-center h-96">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          <Loader2 className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
         </div>
       </InternalLayout>
     );
   }
+  
+  if (!isFounder || isError) {
+      return (
+        <InternalLayout>
+          <div className="text-center py-12">
+             <h2 className="text-xl font-bold text-destructive">Access Denied or Data Error</h2>
+             <p className="text-muted-foreground mt-2">Could not load configuration data. This is usually due to permission issues or a backend fault.</p>
+          </div>
+        </InternalLayout>
+      );
+  }
+
 
   return (
     <InternalLayout>

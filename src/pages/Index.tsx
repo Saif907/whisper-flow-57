@@ -10,12 +10,12 @@ import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { chatAPI } from "@/lib/api";
 import { Message, Chat } from "@/types/app";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"; // ADDED
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 const Index = () => {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
-  const queryClient = useQueryClient(); // ADDED
+  const queryClient = useQueryClient();
   
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeChat, setActiveChat] = useState<string | null>(null);
@@ -34,9 +34,8 @@ const Index = () => {
       timestamp: new Date(chat.created_at),
       messages: [], // Messages will be populated by the dedicated chat query
     }) as Chat),
-    // Use stale-while-revalidate strategy (default 0, but important for UX)
     staleTime: 60 * 1000 * 5, // 5 minutes stale time
-    refetchOnWindowFocus: true, // Auto-refetch on tab focus (eliminates manual reloads)
+    refetchOnWindowFocus: true,
   });
 
   // Query for the currently selected chat's messages
@@ -44,7 +43,7 @@ const Index = () => {
     data: activeChatData,
     isLoading: isLoadingActiveChat,
     isError: isErrorActiveChat,
-    isFetching: isFetchingActiveChat,
+    isFetching: isFetchingActiveChat, // Used here for the fix
   } = useQuery<any>({
     queryKey: ['chat', activeChat],
     queryFn: () => chatAPI.getChat(activeChat!),
@@ -64,7 +63,6 @@ const Index = () => {
   const createChatMutation = useMutation({
     mutationFn: (initialTitle: string) => chatAPI.createChat(initialTitle),
     onSuccess: (newChat) => {
-      // Manually add the new chat to the cache for immediate display (optimistic UI)
       const newChatData: Chat = {
         id: newChat.id,
         title: newChat.title,
@@ -72,8 +70,6 @@ const Index = () => {
         messages: [],
       };
       queryClient.setQueryData(['chats'], (old: Chat[] = []) => [newChatData, ...old]);
-      
-      // Select the new chat
       setActiveChat(newChat.id);
     },
     onError: (error) => {
@@ -86,14 +82,10 @@ const Index = () => {
     mutationFn: ({ chatId, message }: { chatId: string, message: string }) => 
       chatAPI.sendMessage(chatId, message),
     onSuccess: (response, variables) => {
-      // 1. Manually update the active chat cache to append the new message instantly
       queryClient.setQueryData(['chat', variables.chatId], (oldData: Chat | undefined) => {
         if (!oldData) return oldData;
         
-        // Filter out the temporary messages we added optimistically
         const filteredMessages = oldData.messages.filter(m => !m.id.startsWith('temp-'));
-        
-        // Re-add the user message (retaining optimistic content) and the final AI response
         const userMessage = { id: `user-${Date.now()}`, role: "user", content: variables.message } as Message;
         const finalAiMessage = { id: `ai-${Date.now()}-final`, role: "assistant", content: response.message } as Message;
 
@@ -103,12 +95,10 @@ const Index = () => {
         } as Chat;
       });
 
-      // 2. Invalidate chat query (for message count) and the chat list (for title updates)
       queryClient.invalidateQueries({ queryKey: ['chats'] }); 
       
       if (response.trade_extracted) {
         toast.success("Trade logged successfully!");
-        // Also invalidate trades list so Dashboard/Trades pages update
         queryClient.invalidateQueries({ queryKey: ['trades'] }); 
       }
     },
@@ -116,7 +106,6 @@ const Index = () => {
       console.error("Error sending message:", error);
       toast.error("Failed to send message. Please try again.");
       
-      // On error, revert the optimistic update by removing temp messages
       queryClient.setQueryData(['chat', variables.chatId], (oldData: Chat | undefined) => {
         if (!oldData) return oldData;
         return {
@@ -126,8 +115,7 @@ const Index = () => {
       });
     },
     onMutate: async ({ chatId, message }) => {
-      // Optimistic update: instantly show user message and typing indicator
-      await queryClient.cancelQueries({ queryKey: ['chat', chatId] }); // Stop any active fetching
+      await queryClient.cancelQueries({ queryKey: ['chat', chatId] }); 
 
       const userMessage: Message = { id: `temp-${Date.now()}-user`, role: "user", content: message };
       const typingMessage: Message = { id: `temp-${Date.now()}-ai`, role: "assistant", content: "Processing your message..." };
@@ -135,7 +123,6 @@ const Index = () => {
       queryClient.setQueryData(['chat', chatId], (oldData: Chat | undefined) => {
         if (!oldData) return oldData;
         
-        // Find existing messages (excluding old temp messages)
         const currentMessages = oldData.messages.filter(m => !m.id.startsWith('temp-'));
         
         return {
@@ -168,23 +155,18 @@ const Index = () => {
 
     let targetChatId = activeChat;
     
-    // Step 1: Handle Chat Creation if no chat is active
     if (!targetChatId) {
-      // NOTE: Mutation handlers for optimistic update are in sendMessageMutation now.
-      // We start with a simplified process here to get the chat ID quickly.
       const tempChatTitle = content.slice(0, 50);
       const newChatResponse = await createChatMutation.mutateAsync(tempChatTitle);
       targetChatId = newChatResponse.id;
       setActiveChat(newChatResponse.id);
       
-      // Optimistically update chat title in the newly created chat
       queryClient.setQueryData(['chat', targetChatId], (oldData: Chat | undefined) => {
         if (!oldData) return oldData;
         return { ...oldData, title: tempChatTitle } as Chat;
       });
     }
 
-    // Step 2: Send Message
     sendMessageMutation.mutate({ chatId: targetChatId!, message: content });
   };
   
@@ -197,11 +179,10 @@ const Index = () => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-    // Dependency only needs to be the chat data, not the messages list itself
   }, [activeChatData]); 
 
 
-  // --- 4. Render Logic with Loading/Error States ---
+  // --- 4. Render Logic with Loading/Error States (FIX APPLIED) ---
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -209,7 +190,7 @@ const Index = () => {
     }
   }, [user, authLoading, navigate]);
 
-  // Global loading state (only show spinner on initial auth or initial chat load)
+  // Global loading state (only show spinner on initial auth or initial chat list load)
   if (authLoading || isLoadingChats) {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -224,9 +205,11 @@ const Index = () => {
 
   const currentChat = activeChatData;
   const isInitialState = !currentChat || currentChat.messages.length === 0;
+  
+  // FIX: Only show the content loading state if we are loading/fetching AND we have NO data cached yet.
+  const isContentLoading = !currentChat && (isLoadingActiveChat || isFetchingActiveChat);
 
-  // Show a simpler loading/error for messages while the list is already loaded
-  const chatMessagesContent = (isLoadingActiveChat || isFetchingActiveChat) ? (
+  const chatMessagesContent = isContentLoading ? (
     <div className="flex flex-col flex-1 items-center justify-center h-96">
       <Loader2 className="h-6 w-6 animate-spin text-primary" />
       <p className="text-sm text-muted-foreground mt-3">Loading chat history...</p>
@@ -234,6 +217,7 @@ const Index = () => {
   ) : (
     <ScrollArea className="flex-1" ref={scrollRef}>
       <div className="space-y-0">
+        {/* currentChat? is necessary because activeChatData might be undefined during initial fetch */}
         {currentChat?.messages.map((message) => (
           <ChatMessage
             key={message.id}
@@ -249,7 +233,7 @@ const Index = () => {
     <Layout
       sidebarOpen={sidebarOpen}
       onSidebarToggle={() => setSidebarOpen(!sidebarOpen)}
-      chats={chats} // Passing cached chat list
+      chats={chats}
       activeChat={activeChat}
       onChatSelect={handleChatSelect}
       onNewChat={handleNewChat}

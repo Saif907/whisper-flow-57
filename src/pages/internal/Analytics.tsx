@@ -1,45 +1,49 @@
-import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { supabase } from "@/integrations/supabase/client";
-import { TrendingUp, Target, Calendar, DollarSign } from "lucide-react";
+// REMOVED: import { supabase } from "@/integrations/supabase/client";
+import { TrendingUp, Target, Calendar, DollarSign, Loader2 } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 import { useFounderCheck } from "@/hooks/useFounderCheck";
 import { InternalLayout } from "@/components/InternalLayout";
+import { useQuery } from "@tanstack/react-query"; // IMPORTED
+import { internalAPI } from "@/lib/api"; // IMPORTED
+
+// Interface matching the backend's InternalTradeAnalytics structure
+interface AnalyticsData {
+  totalTrades: number;
+  avgProfit: number;
+  winRate: number;
+  avgHoldTime: number;
+}
+
+// Function to fetch and process data for caching
+const fetchInternalAnalytics = async (roleLoading: boolean, isFounder: boolean): Promise<AnalyticsData> => {
+    // SECURITY CHECK: Use internal API to enforce role check implicitly on the backend
+    if (roleLoading || !isFounder) {
+        throw new Error("Access Denied");
+    }
+    // Call the dedicated, efficient API endpoint
+    return internalAPI.getAnalytics();
+};
+
 
 export default function Analytics() {
-  const { loading: roleLoading } = useFounderCheck();
-  const [loading, setLoading] = useState(true);
-  const [totalTrades, setTotalTrades] = useState(0);
-  const [avgProfit, setAvgProfit] = useState(0);
+  const { isFounder, loading: roleLoading } = useFounderCheck();
 
-  useEffect(() => {
-    const fetchAnalytics = async () => {
-      if (roleLoading) return;
+  // 1. Use useQuery to handle fetching, loading, and caching
+  const { 
+      data: analyticsData, 
+      isLoading, 
+      isError 
+  } = useQuery<AnalyticsData>({
+      queryKey: ['internal-analytics'],
+      queryFn: () => fetchInternalAnalytics(roleLoading, isFounder),
+      // Only run the query if permissions are verified
+      enabled: isFounder && !roleLoading,
+      staleTime: 60 * 1000, // 1 minute stale time (smooth functioning)
+      refetchOnWindowFocus: true,
+  });
 
-      try {
-        const { count } = await supabase
-          .from("trades")
-          .select("*", { count: "exact", head: true });
-
-        const { data: trades } = await supabase
-          .from("trades")
-          .select("profit_loss")
-          .not("profit_loss", "is", null);
-
-        const totalPL = trades?.reduce((sum, t) => sum + Number(t.profit_loss || 0), 0) || 0;
-        const avg = trades && trades.length > 0 ? totalPL / trades.length : 0;
-
-        setTotalTrades(count || 0);
-        setAvgProfit(avg);
-      } catch (error) {
-        console.error("Error fetching analytics:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchAnalytics();
-  }, [roleLoading]);
+  const currentMetrics = analyticsData || { totalTrades: 0, avgProfit: 0, winRate: 0, avgHoldTime: 0 };
 
   const instrumentData = [
     { name: "NIFTY", value: 42, color: "hsl(var(--primary))" },
@@ -56,14 +60,26 @@ export default function Analytics() {
     { period: "2+ weeks", count: 23 },
   ];
 
-  if (roleLoading || loading) {
+  // 2. Consolidate Loading and Error States
+  if (roleLoading || isLoading) {
     return (
       <InternalLayout>
         <div className="flex items-center justify-center h-96">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          <Loader2 className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
         </div>
       </InternalLayout>
     );
+  }
+
+  if (!isFounder || isError) {
+      return (
+        <InternalLayout>
+          <div className="text-center py-12">
+             <h2 className="text-xl font-bold text-destructive">Access Denied or Data Error</h2>
+             <p className="text-muted-foreground mt-2">Could not retrieve aggregate trade data. This is usually due to permission issues or a backend fault.</p>
+          </div>
+        </InternalLayout>
+      );
   }
 
   return (
@@ -81,7 +97,7 @@ export default function Analytics() {
               <TrendingUp className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{totalTrades}</div>
+              <div className="text-2xl font-bold">{currentMetrics.totalTrades}</div>
             </CardContent>
           </Card>
 
@@ -91,8 +107,8 @@ export default function Analytics() {
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className={`text-2xl font-bold ${avgProfit >= 0 ? "text-green-500" : "text-red-500"}`}>
-                ₹{avgProfit.toFixed(2)}
+              <div className={`text-2xl font-bold ${currentMetrics.avgProfit >= 0 ? "text-green-500" : "text-red-500"}`}>
+                ₹{currentMetrics.avgProfit.toFixed(2)}
               </div>
             </CardContent>
           </Card>
@@ -103,7 +119,7 @@ export default function Analytics() {
               <Target className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">64.3%</div>
+              <div className="text-2xl font-bold">{currentMetrics.winRate.toFixed(1)}%</div>
             </CardContent>
           </Card>
 
@@ -113,7 +129,7 @@ export default function Analytics() {
               <Calendar className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">2.4d</div>
+              <div className="text-2xl font-bold">{currentMetrics.avgHoldTime}d</div>
             </CardContent>
           </Card>
         </div>

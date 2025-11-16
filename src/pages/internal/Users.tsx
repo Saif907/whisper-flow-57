@@ -1,15 +1,17 @@
-import { useEffect, useState } from "react";
+// src/pages/internal/Users.tsx
+import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { supabase } from "@/integrations/supabase/client";
+// REMOVED: import { supabase } from "@/integrations/supabase/client";
 import { Search, Loader2 } from "lucide-react";
 import { useFounderCheck } from "@/hooks/useFounderCheck";
 import { InternalLayout } from "@/components/InternalLayout";
-import { useQuery } from "@tanstack/react-query"; // IMPORTED: For caching and robust fetching
+import { useQuery } from "@tanstack/react-query";
+import { internalAPI } from "@/lib/api"; // IMPORTED: New internal API
 
-// Interface for what the client fetches and combines
+// Interface matching the backend's UserDataInternal model (Efficient API response)
 interface UserData {
   id: string;
   pseudonymous_id: string;
@@ -21,65 +23,17 @@ interface UserData {
   chats_count: number;
 }
 
-// Function that handles the complex fetching logic for useQuery
-const fetchInternalUsers = async (roleLoading: boolean, isFounder: boolean): Promise<UserData[]> => {
-    // SECURITY CHECK: This request uses the client's token. 
-    // RLS policies must allow founder to view all profiles, trades, and chats.
-    if (roleLoading || !isFounder) return [];
-
-    try {
-      const { data: profiles, error } = await supabase
-          .from("profiles")
-          .select("*") 
-          .order("created_at", { ascending: false });
-
-      if (error) {
-          console.error("Error fetching profiles:", error);
-          throw new Error(error.message || "Failed to fetch user profiles");
-      }
-
-      // WARNING: This section is an inefficient N+1 query.
-      // We process it here for functionality, but it is the biggest performance bottleneck.
-      const usersWithCounts = await Promise.all(
-          (profiles || []).map(async (profile: any) => {
-              
-              const { count: tradesCount } = await supabase
-                  .from("trades")
-                  .select("*", { count: "exact", head: true })
-                  .eq("user_id", profile.id);
-
-              const { count: chatsCount } = await supabase
-                  .from("chats")
-                  .select("*", { count: "exact", head: true })
-                  .eq("user_id", profile.id);
-
-              return {
-                  ...profile,
-                  trades_count: tradesCount || 0,
-                  chats_count: chatsCount || 0,
-              } as UserData;
-          })
-      );
-      
-      return usersWithCounts;
-    } catch (error) {
-        throw new Error(`Failed to fetch user data: ${error instanceof Error ? error.message : String(error)}`);
-    }
-};
-
-
 export default function Users() {
   const { isFounder, loading: roleLoading } = useFounderCheck();
   const [search, setSearch] = useState("");
   
-  // 1. Use useQuery for caching and automatic re-fetching
+  // 1. Use useQuery to call the new efficient backend endpoint
   const { data: users, isLoading, isError } = useQuery<UserData[]>({
     queryKey: ['internal-users'],
-    queryFn: () => fetchInternalUsers(roleLoading, isFounder),
-    // Only run the query if permissions are verified
+    queryFn: internalAPI.getUsers, // CALLING THE NEW EFFICIENT API
+    // Only run the query if permissions are verified, otherwise the API will return 403 anyway
     enabled: isFounder && !roleLoading, 
-    // Aggressive caching policy for administrative data
-    staleTime: 60 * 1000, // 1 minute stale time (smooth functioning)
+    staleTime: 60 * 1000, 
     refetchOnWindowFocus: true,
   });
 
@@ -87,7 +41,6 @@ export default function Users() {
 
   const filteredUsers = allUsers.filter((user) => {
     const searchLower = search.toLowerCase();
-    // Only search by pseudonymous_id, as per the existing component logic
     return user.pseudonymous_id?.toLowerCase().includes(searchLower);
   });
 
@@ -107,7 +60,10 @@ export default function Users() {
         <InternalLayout>
           <div className="text-center py-12">
              <h2 className="text-xl font-bold text-destructive">Access Denied or Data Error</h2>
-             <p className="text-muted-foreground mt-2">Could not retrieve internal user data. This is usually due to permission issues or a backend fault.</p>
+             <p className="text-muted-foreground mt-2">
+                Could not retrieve internal user data. 
+                {isError ? "This is usually due to a backend fault or network issue." : "Please ensure your user ID has the 'founder' role."}
+             </p>
           </div>
         </InternalLayout>
       );

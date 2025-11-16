@@ -7,23 +7,55 @@ import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { Chat } from "@/types/app"; // IMPORTED: Use centralized type
+import { useQuery } from "@tanstack/react-query"; // IMPORTED: For caching
+import { Chat } from "@/types/app";
 
-// REMOVED: The local Chat interface definition has been deleted.
+// Query function to fetch the user's chat list (for sidebar rendering)
+const fetchChats = async (userId: string | undefined): Promise<Chat[]> => {
+    if (!userId) return [];
+    
+    // NOTE: This uses the exposed supabase client directly (not the protected backend API)
+    // It relies on RLS policies to restrict results to the current user.
+    const { data, error } = await supabase
+      .from("chats")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+        console.error("Error fetching chats:", error);
+        throw new Error(error.message);
+    }
+    
+    return (data || []).map((chat: any) => ({
+      id: chat.id,
+      title: chat.title,
+      timestamp: new Date(chat.created_at),
+      messages: [],
+    }));
+};
 
 const Dashboard = () => {
-  const { user, loading } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [chats, setChats] = useState<Chat[]>([]); // Now uses imported Chat interface
+
+  // 1. Fetch chat list using useQuery
+  const { data: chats = [], isLoading: isLoadingChats } = useQuery<Chat[]>({
+    queryKey: ['dashboard-chats', user?.id],
+    queryFn: () => fetchChats(user?.id),
+    enabled: !!user,
+    staleTime: 1000 * 60, // Cache chats for 1 minute
+  });
 
   useEffect(() => {
-    if (!loading && !user) {
+    // Redirect if not authenticated or not loading
+    if (!authLoading && !user) {
       navigate("/auth");
     }
-  }, [user, loading, navigate]);
+  }, [user, authLoading, navigate]);
 
-  if (loading) {
+  if (authLoading || isLoadingChats) {
     return (
       <div className="flex h-screen items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -34,33 +66,8 @@ const Dashboard = () => {
   if (!user) {
     return null;
   }
-
-  useEffect(() => {
-    if (!user) return;
-
-    // NOTE: This fetch logic is currently synchronous client-side fetch.
-    // It will be replaced by TanStack Query in a future step to enable caching (browser front-end caching).
-    const loadChats = async () => {
-      const { data } = await supabase
-        .from("chats")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
-
-      if (data) {
-        setChats(
-          data.map((chat) => ({
-            id: chat.id,
-            title: chat.title,
-            timestamp: new Date(chat.created_at),
-            messages: [], // Initialize empty messages array to satisfy the Chat interface
-          }))
-        );
-      }
-    };
-
-    loadChats();
-  }, [user]);
+  
+  // NOTE: Static mock data below remains until we implement proper backend API routes for Dashboard stats.
 
   const stats = [
     {

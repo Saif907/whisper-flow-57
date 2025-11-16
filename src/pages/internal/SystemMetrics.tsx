@@ -1,39 +1,101 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Activity, Zap, DollarSign, Clock } from "lucide-react";
+import { Activity, Zap, DollarSign, Clock, Loader2 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { useFounderCheck } from "@/hooks/useFounderCheck";
 import { InternalLayout } from "@/components/InternalLayout";
+import { useQuery } from "@tanstack/react-query"; // IMPORTED: For caching
+
+// Interface for what the component needs
+interface SystemMetricsData {
+    uptime: string;
+    avgLatency: number;
+    aiRequests: number;
+    aiCosts: number;
+    latencyData: { time: string, ms: number }[];
+    aiCostData: { day: string, cost: number }[];
+}
+
+// Function to simulate fetching system metrics (MOCK)
+const fetchSystemMetrics = async (roleLoading: boolean, isFounder: boolean): Promise<SystemMetricsData> => {
+    if (roleLoading || !isFounder) {
+        throw new Error("Access Denied");
+    }
+
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 500)); 
+
+    // MOCK DATA (to be replaced by actual backend/monitoring endpoints)
+    return {
+        uptime: "99.98%",
+        avgLatency: 187,
+        aiRequests: 2847,
+        aiCosts: 123.80,
+        latencyData: [
+            { time: "00:00", ms: 145 },
+            { time: "04:00", ms: 132 },
+            { time: "08:00", ms: 189 },
+            { time: "12:00", ms: 234 },
+            { time: "16:00", ms: 267 },
+            { time: "20:00", ms: 198 },
+        ],
+        aiCostData: [
+            { day: "Mon", cost: 12.5 },
+            { day: "Tue", cost: 18.3 },
+            { day: "Wed", cost: 15.7 },
+            { day: "Thu", cost: 21.4 },
+            { day: "Fri", cost: 24.8 },
+            { day: "Sat", cost: 16.2 },
+            { day: "Sun", cost: 14.9 },
+        ],
+    };
+};
 
 export default function SystemMetrics() {
-  const { loading: roleLoading } = useFounderCheck();
+  const { isFounder, loading: roleLoading } = useFounderCheck();
 
-  const latencyData = [
-    { time: "00:00", ms: 145 },
-    { time: "04:00", ms: 132 },
-    { time: "08:00", ms: 189 },
-    { time: "12:00", ms: 234 },
-    { time: "16:00", ms: 267 },
-    { time: "20:00", ms: 198 },
-  ];
+  // 1. Use useQuery to handle fetching, loading, and caching
+  const { 
+    data: metrics, 
+    isLoading, 
+    isError 
+  } = useQuery<SystemMetricsData>({
+    queryKey: ['internal-system-metrics'],
+    queryFn: () => fetchSystemMetrics(roleLoading, isFounder),
+    enabled: isFounder && !roleLoading,
+    staleTime: 60 * 1000, // 1 minute stale time for real-time metrics
+    refetchOnWindowFocus: true,
+  });
 
-  const aiCostData = [
-    { day: "Mon", cost: 12.5 },
-    { day: "Tue", cost: 18.3 },
-    { day: "Wed", cost: 15.7 },
-    { day: "Thu", cost: 21.4 },
-    { day: "Fri", cost: 24.8 },
-    { day: "Sat", cost: 16.2 },
-    { day: "Sun", cost: 14.9 },
-  ];
+  const currentMetrics = metrics || { 
+      uptime: "0%", 
+      avgLatency: 0, 
+      aiRequests: 0, 
+      aiCosts: 0, 
+      latencyData: [], 
+      aiCostData: [] 
+  };
 
-  if (roleLoading) {
+
+  // 2. Consolidate Loading and Error States
+  if (roleLoading || isLoading) {
     return (
       <InternalLayout>
         <div className="flex items-center justify-center h-96">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          <Loader2 className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
         </div>
       </InternalLayout>
     );
+  }
+
+  if (!isFounder || isError) {
+      return (
+        <InternalLayout>
+          <div className="text-center py-12">
+             <h2 className="text-xl font-bold text-destructive">Access Denied or Data Error</h2>
+             <p className="text-muted-foreground mt-2">Could not retrieve system metrics. This is usually due to permission issues or a backend fault.</p>
+          </div>
+        </InternalLayout>
+      );
   }
 
   return (
@@ -51,7 +113,7 @@ export default function SystemMetrics() {
               <Activity className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-500">99.98%</div>
+              <div className="text-2xl font-bold text-green-500">{currentMetrics.uptime}</div>
               <p className="text-xs text-muted-foreground mt-1">Last 30 days</p>
             </CardContent>
           </Card>
@@ -62,7 +124,7 @@ export default function SystemMetrics() {
               <Clock className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">187ms</div>
+              <div className="text-2xl font-bold">{currentMetrics.avgLatency}ms</div>
               <p className="text-xs text-muted-foreground mt-1">API response time</p>
             </CardContent>
           </Card>
@@ -73,7 +135,7 @@ export default function SystemMetrics() {
               <Zap className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">2,847</div>
+              <div className="text-2xl font-bold">{currentMetrics.aiRequests.toLocaleString()}</div>
               <p className="text-xs text-muted-foreground mt-1">This week</p>
             </CardContent>
           </Card>
@@ -84,7 +146,7 @@ export default function SystemMetrics() {
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">$123.80</div>
+              <div className="text-2xl font-bold">${currentMetrics.aiCosts.toFixed(2)}</div>
               <p className="text-xs text-muted-foreground mt-1">This week</p>
             </CardContent>
           </Card>
@@ -98,7 +160,7 @@ export default function SystemMetrics() {
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={latencyData}>
+                <LineChart data={currentMetrics.latencyData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                   <XAxis dataKey="time" className="text-xs" />
                   <YAxis className="text-xs" />
@@ -122,7 +184,7 @@ export default function SystemMetrics() {
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={aiCostData}>
+                <LineChart data={currentMetrics.aiCostData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                   <XAxis dataKey="day" className="text-xs" />
                   <YAxis className="text-xs" />
